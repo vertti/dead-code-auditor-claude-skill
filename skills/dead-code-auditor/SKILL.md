@@ -1,13 +1,7 @@
 ---
 name: dead-code-auditor
 description: Find dead code in Python ML projects using vulture and skylos, accounting for notebook usage
-allowed-tools:
-  - Read
-  - Bash
-  - Grep
-  - Glob
-  - Write
-  - Edit
+allowed-tools: Read, Bash, Grep, Glob, Write, Edit
 user-invocable: true
 ---
 
@@ -23,20 +17,22 @@ Vulture and skylos find CANDIDATES, not confirmed dead code. The verification ph
 
 ## Quick Start
 
-Run the full audit:
+Run the full audit (scripts are in `$SKILL_DIR/scripts/`):
 
 ```bash
-uv run python .claude/skills/dead-code-auditor/scripts/generate_report.py
+uv run python $SKILL_DIR/scripts/generate_report.py
 ```
 
 Or with custom options:
 
 ```bash
-uv run python .claude/skills/dead-code-auditor/scripts/generate_report.py \
+uv run python $SKILL_DIR/scripts/generate_report.py \
     --source-dirs src mypackage \
     --vulture-confidence 100 \
     --output-dir /tmp
 ```
+
+Note: `$SKILL_DIR` refers to this skill's directory. When running manually, replace with the actual path (e.g., `~/.claude/plugins/dead-code-auditor/skills/dead-code-auditor`).
 
 ## How It Works
 
@@ -53,10 +49,10 @@ Run vulture and skylos to generate initial candidates:
 
 ```bash
 # Run vulture (auto-detects source dirs)
-.claude/skills/dead-code-auditor/scripts/run_vulture.sh 80
+$SKILL_DIR/scripts/run_vulture.sh 80
 
 # Run skylos
-.claude/skills/dead-code-auditor/scripts/run_skylos.sh 60 /tmp/skylos_output.json
+$SKILL_DIR/scripts/run_skylos.sh 60 /tmp/skylos_output.json
 ```
 
 ### Phase 3: Verification (CRITICAL)
@@ -64,7 +60,7 @@ Run vulture and skylos to generate initial candidates:
 For EACH candidate, verify it's truly dead:
 
 ```bash
-uv run python .claude/skills/dead-code-auditor/scripts/verify_candidate.py <name> <file_path>
+uv run python $SKILL_DIR/scripts/verify_candidate.py <name> <file_path>
 ```
 
 Verification checks:
@@ -135,7 +131,7 @@ The tool can generate a project-specific whitelist by detecting:
 - Plugin registrations
 
 ```bash
-uv run python .claude/skills/dead-code-auditor/scripts/generate_whitelist.py
+uv run python $SKILL_DIR/scripts/generate_whitelist.py
 ```
 
 ## Report Format

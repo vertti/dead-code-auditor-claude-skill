@@ -1,8 +1,8 @@
-# Dead Code Auditor - Claude Code Skill
+# Dead Code Auditor - Claude Code Plugin
 
-A Claude Code skill that finds dead code in Python ML projects using [vulture](https://github.com/jendrikseipp/vulture) and [skylos](https://github.com/pyscaffold/skylos), with verification against Jupyter notebook usage.
+A Claude Code plugin that finds dead code in Python ML projects using [vulture](https://github.com/jendrikseipp/vulture) and [skylos](https://github.com/pyscaffold/skylos), with verification against Jupyter notebook usage.
 
-## Why This Skill?
+## Why This Plugin?
 
 Static analysis tools like vulture flag many false positives, especially in ML projects where:
 - Flyte/Airflow tasks are called by orchestration frameworks
@@ -10,7 +10,7 @@ Static analysis tools like vulture flag many false positives, especially in ML p
 - CLI entry points are invoked externally
 - Pybind11 bindings expose C++ code to Python
 
-This skill **verifies every candidate** with grep/ripgrep searches before reporting, eliminating false positives.
+This plugin **verifies every candidate** with grep/ripgrep searches before reporting, eliminating false positives.
 
 ## Features
 
@@ -23,20 +23,26 @@ This skill **verifies every candidate** with grep/ripgrep searches before report
 
 ## Installation
 
-Add to your project's `.claude/skills/` directory:
+### As a Claude Code Plugin (Recommended)
 
 ```bash
-# Clone into your project
-git clone https://github.com/vertti/dead-code-auditor-claude-skill.git /tmp/dca
-cp -r /tmp/dca/.claude/skills/dead-code-auditor .claude/skills/
-rm -rf /tmp/dca
+# Add the marketplace
+/plugin marketplace add vertti/dead-code-auditor-claude-skill
+
+# Install the plugin
+/plugin install dead-code-auditor
 ```
 
-Or add as a git submodule:
+### For Local Development
+
+Clone the repo locally and add as a local marketplace:
 
 ```bash
-git submodule add https://github.com/vertti/dead-code-auditor-claude-skill.git .claude/skills/dead-code-auditor-repo
-ln -s dead-code-auditor-repo/.claude/skills/dead-code-auditor .claude/skills/dead-code-auditor
+git clone https://github.com/vertti/dead-code-auditor-claude-skill.git ~/dev/dead-code-auditor-claude-skill
+
+# Add as local marketplace (changes take effect immediately)
+/plugin marketplace add ~/dev/dead-code-auditor-claude-skill
+/plugin install dead-code-auditor
 ```
 
 ## Usage
@@ -47,20 +53,20 @@ In Claude Code, use the skill:
 /dead-code-auditor
 ```
 
-Or run the scripts directly:
+Or run the scripts directly (paths relative to the plugin installation):
 
 ```bash
 # Full audit with report
-uv run python .claude/skills/dead-code-auditor/scripts/generate_report.py
+uv run python skills/dead-code-auditor/scripts/generate_report.py
 
 # With custom options
-uv run python .claude/skills/dead-code-auditor/scripts/generate_report.py \
+uv run python skills/dead-code-auditor/scripts/generate_report.py \
     --source-dirs src mypackage \
     --vulture-confidence 100 \
     --output-dir ./reports
 
 # Generate project-specific whitelist
-uv run python .claude/skills/dead-code-auditor/scripts/generate_whitelist.py --append
+uv run python skills/dead-code-auditor/scripts/generate_whitelist.py --append
 ```
 
 ## How It Works
@@ -144,7 +150,7 @@ MyClass  # Base class - subclasses in external package
 Detect and add project-specific patterns:
 
 ```bash
-uv run python .claude/skills/dead-code-auditor/scripts/generate_whitelist.py --append
+uv run python skills/dead-code-auditor/scripts/generate_whitelist.py --append
 ```
 
 This finds:
