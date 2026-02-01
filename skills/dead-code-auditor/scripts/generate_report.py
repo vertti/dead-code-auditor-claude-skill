@@ -33,7 +33,7 @@ from config import Config, load_config
 from verify_candidate import verify_candidate
 
 
-def run_vulture(config: Config, min_confidence: int = 80) -> list[dict]:
+def run_vulture(config: Config, min_confidence: int = 60) -> list[dict]:
     """Run vulture and parse its output."""
     source_dirs = " ".join(config.source_dirs)
     excludes = ",".join(config.exclude_dirs)
@@ -114,9 +114,12 @@ def run_vulture(config: Config, min_confidence: int = 80) -> list[dict]:
 
 
 def run_skylos(config: Config, confidence: int = 60) -> list[dict]:
-    """Run skylos and parse its JSON output."""
-    output_file = Path("/tmp/skylos_output.json")
+    """Run skylos and parse its JSON output.
 
+    Skylos outputs JSON with keys: unused_functions, unused_classes,
+    unused_imports, unused_variables, unused_parameters, unused_files.
+    Each item has: name, simple_name, type, file, line, confidence, references.
+    """
     exclude_args = []
     for d in config.exclude_dirs:
         if "*" not in d:  # skylos doesn't support glob patterns
@@ -130,56 +133,68 @@ def run_skylos(config: Config, confidence: int = 60) -> list[dict]:
         str(confidence),
         *exclude_args,
         "--json",
-        "-o",
-        str(output_file),
     ]
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             cwd=config.repo_root,
-            timeout=120,
+            timeout=300,  # skylos can be slow on large codebases
         )
     except subprocess.TimeoutExpired:
         print("Warning: skylos timed out", file=sys.stderr)
         return []
 
-    if not output_file.exists():
+    # Skylos outputs JSON to stdout (stderr has log messages)
+    if not result.stdout.strip():
         return []
 
     try:
-        with open(output_file) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        print("Warning: failed to parse skylos JSON output", file=sys.stderr)
         return []
 
     candidates = []
-    if isinstance(data, list):
-        for item in data:
+
+    # Skylos JSON structure has keys like unused_functions, unused_classes, etc.
+    unused_keys = [
+        "unused_functions",
+        "unused_classes",
+        "unused_imports",
+        "unused_variables",
+        "unused_parameters",
+    ]
+
+    for key in unused_keys:
+        items = data.get(key, [])
+        if not isinstance(items, list):
+            continue
+
+        for item in items:
+            item_confidence = item.get("confidence", 0)
+            if item_confidence < confidence:
+                continue
+
+            # Use simple_name for matching (without module prefix)
+            name = item.get("simple_name") or item.get("name", "")
+            file_path = item.get("file", "")
+
+            # Make file path relative to repo root if absolute
+            if file_path.startswith(str(config.repo_root)):
+                file_path = str(Path(file_path).relative_to(config.repo_root))
+
             candidates.append({
                 "source": "skylos",
-                "file_path": item.get("file", item.get("path", "")),
+                "file_path": file_path,
                 "line": item.get("line", 0),
-                "name": item.get("name", ""),
+                "name": name,
                 "type": item.get("type", "unknown"),
-                "confidence": item.get("confidence", 0),
-                "message": item.get("message", ""),
+                "confidence": item_confidence,
+                "message": f"unused {item.get('type', 'item')} (0 references)",
             })
-    elif isinstance(data, dict):
-        for file_path, items in data.items():
-            if isinstance(items, list):
-                for item in items:
-                    candidates.append({
-                        "source": "skylos",
-                        "file_path": file_path,
-                        "line": item.get("line", 0),
-                        "name": item.get("name", ""),
-                        "type": item.get("type", "unknown"),
-                        "confidence": item.get("confidence", 0),
-                        "message": item.get("message", ""),
-                    })
 
     return candidates
 
@@ -332,8 +347,8 @@ def main():
     parser.add_argument(
         "--vulture-confidence",
         type=int,
-        default=80,
-        help="Minimum vulture confidence threshold (default: 80)",
+        default=60,
+        help="Minimum vulture confidence threshold (default: 60)",
     )
     parser.add_argument(
         "--skylos-confidence",
