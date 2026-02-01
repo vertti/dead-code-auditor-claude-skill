@@ -53,10 +53,12 @@ def run_vulture(config: Config, min_confidence: int = 80) -> list[dict]:
             except OSError:
                 pass
 
+    # Whitelist files must be passed as paths alongside source dirs
     cmd = [
         "uvx",
         "vulture",
         *config.source_dirs,
+        *whitelist_args,
         "--min-confidence",
         str(min_confidence),
         "--exclude",
@@ -66,7 +68,6 @@ def run_vulture(config: Config, min_confidence: int = 80) -> list[dict]:
         "--ignore-names",
         names,
         "--sort-by-size",
-        *whitelist_args,
     ]
 
     try:
@@ -82,7 +83,8 @@ def run_vulture(config: Config, min_confidence: int = 80) -> list[dict]:
         return []
 
     candidates = []
-    pattern = re.compile(r"^(.+):(\d+): (.+) \((\d+)% confidence\)$")
+    # Pattern handles optional ", N line(s)" suffix from --sort-by-size
+    pattern = re.compile(r"^(.+):(\d+): (.+) \((\d+)% confidence(?:, \d+ lines?)?\)$")
 
     for line in result.stdout.strip().split("\n"):
         if not line:
