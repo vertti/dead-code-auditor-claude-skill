@@ -1,188 +1,125 @@
 ---
 name: dead-code-auditor
 description: Find dead code in Python ML projects using vulture and skylos, accounting for notebook usage
-allowed-tools: Read, Bash, Grep, Glob, Write, Edit
+allowed-tools: Read, Bash, Grep, Glob, Write, Edit, Task
 user-invocable: true
 ---
 
 # Dead Code Auditor for Python ML Projects
 
-Find and report dead code in Python projects using vulture and skylos tools, with verification against Jupyter notebook usage.
+Find dead code using vulture + skylos, then verify each candidate with intelligent agents.
 
-## Key Principle
+## Workflow
 
-**Tool confidence scores are ONLY for initial discovery. Every item in the final report must be 100% verified dead via grep/ripgrep searches.**
-
-Vulture and skylos find CANDIDATES, not confirmed dead code. The verification phase is critical.
-
-## Quick Start
-
-Run the full audit (scripts are in `$SKILL_DIR/scripts/`):
+### Step 1: Run Discovery
 
 ```bash
-uv run python $SKILL_DIR/scripts/generate_report.py
+uv run python $SKILL_DIR/scripts/generate_report.py --limit 30
 ```
 
-Or with custom options:
+This runs vulture and skylos, merges results, and outputs a JSON file with candidates.
 
-```bash
-uv run python $SKILL_DIR/scripts/generate_report.py \
-    --source-dirs src mypackage \
-    --vulture-confidence 100 \
-    --output-dir /tmp
+Options:
+- `--limit N` - Limit to N candidates (recommended: start with 30-50)
+- `--vulture-confidence N` - Min confidence for vulture (default: 60)
+- `--skylos-confidence N` - Min confidence for skylos (default: 60)
+- `--skip-skylos` - Use only vulture
+
+### Step 2: Read Candidates
+
+Read the JSON file output from step 1 to get the list of candidates.
+
+### Step 3: Spawn Verification Agents
+
+**CRITICAL**: Spawn parallel Explore agents to verify candidates. Group into batches of 5-10.
+
+Use multiple Task tool calls in a single message:
+
+```
+Task(subagent_type="Explore", prompt="Verify candidates 1-10: ...")
+Task(subagent_type="Explore", prompt="Verify candidates 11-20: ...")
+Task(subagent_type="Explore", prompt="Verify candidates 21-30: ...")
 ```
 
-Note: `$SKILL_DIR` refers to this skill's directory. When running manually, replace with the actual path (e.g., `~/.claude/plugins/dead-code-auditor/skills/dead-code-auditor`).
+#### Verification Agent Prompt
 
-## How It Works
+```
+Verify if these code items are truly dead (unused) in the codebase.
 
-### Phase 1: Auto-Detection
+For EACH candidate, check:
+1. Is it called/referenced in source code? (use Grep)
+2. Is it used in notebooks? (grep *.ipynb)
+3. Is it accessed dynamically? (getattr, dict keys, string literals)
+4. Is it exported in __init__.py or __all__?
+5. Is it a protocol method or framework callback?
+6. Is it a public API parameter (may be unused internally but needed for callers)?
 
-The tool automatically detects:
-- **Source directories**: Python packages (folders with `__init__.py`) at repo root
-- **Notebooks**: All `.ipynb` files in the repository
-- **Test directories**: `tests/`, `test/`, `*_tests/`, `tests_*/` patterns
+Candidates:
+{paste candidates here with file_path, line, name, type}
 
-### Phase 2: Discovery
+Respond with a table:
+| name | file_path | verdict | reason |
 
-Run vulture and skylos to generate initial candidates:
+Verdicts: DEAD | ALIVE | NOTEBOOK_ONLY
 
-```bash
-# Run vulture (auto-detects source dirs)
-$SKILL_DIR/scripts/run_vulture.sh 80
-
-# Run skylos
-$SKILL_DIR/scripts/run_skylos.sh 60 /tmp/skylos_output.json
+Be ACCURATE. When in doubt, mark as ALIVE.
 ```
 
-### Phase 3: Verification (CRITICAL)
+#### What Makes Something ALIVE (Not Dead)
 
-For EACH candidate, verify it's truly dead:
+- **Called anywhere** in source (excluding tests)
+- **Used in notebooks**
+- **Dynamic access**: `getattr(obj, "name")`, `obj["name"]`, `"name"` in strings
+- **Exported**: in `__init__.py` imports or `__all__`
+- **Protocol methods**: `__enter__`, `__exit__`, `__iter__`, etc.
+- **Framework callbacks**: Flyte tasks, pytest fixtures, Flask routes, Pydantic validators
+- **Public parameters**: Function params exist for callers even if unused internally
+- **Enum values**: Often accessed via `Enum.VALUE` or string matching
+- **Dataclass/Pydantic fields**: Accessed via serialization
 
-```bash
-uv run python $SKILL_DIR/scripts/verify_candidate.py <name> <file_path>
-```
+### Step 4: Generate Report
 
-Verification checks:
-1. Source code references (excluding tests)
-2. Notebook references (all `.ipynb` files)
-3. String literal references (dynamic dispatch)
-4. `__init__.py` re-exports and `__all__` entries
-5. Class inheritance patterns
-
-### Phase 4: Generate Report
-
-Only verified dead code (ZERO references found) is included in the report.
-
-## Configuration
-
-Create `.dead-code-auditor.json` in your repo root (optional):
-
-```json
-{
-  "source_dirs": ["src", "mypackage"],
-  "exclude_dirs": ["tests", "test", "docs", "examples"],
-  "exclude_patterns": ["*_test.py", "conftest.py"],
-  "extra_ignored_decorators": ["@my_custom_decorator"],
-  "extra_ignored_names": ["my_special_*"]
-}
-```
-
-If not provided, the tool auto-detects settings.
-
-## Built-in Exclusions
-
-### Directories (auto-excluded from analysis)
-- `tests/`, `test/`, `*_tests/`, `tests_*/` - Test code
-- `__pycache__`, `*.egg-info`, `build`, `dist`, `.git` - Build artifacts
-
-### Decorators (ignored as framework-required)
-- `@pytest.fixture`, `@pytest.mark.*`
-- `@lru_cache`, `@cached_property`
-- `@property`, `@staticmethod`, `@classmethod`
-- `@abstractmethod`, `@overload`
-- `@task`, `@workflow`, `@dynamic` (Flyte)
-- `@app.route`, `@router.*` (web frameworks)
-
-### Names (ignored patterns)
-- `test_*`, `*_fixture`
-- `setUp`, `tearDown`, `setUpClass`, `tearDownClass`
-- `_*` (private by convention)
-
-## Whitelist
-
-### Built-in whitelist (`whitelist_builtin.py`)
-Common false positives across Python ML projects.
-
-### Project whitelist (`whitelist.py`)
-Add project-specific false positives:
-
-```python
-# whitelist.py - vulture whitelist format
-unused_func  # Used by Flyte @task decorator
-ClassName  # Base class for plugin system
-```
-
-### Auto-generated whitelist
-The tool can generate a project-specific whitelist by detecting:
-- Flyte task/workflow functions
-- CLI entry points from pyproject.toml
-- Pybind11 bindings
-- Plugin registrations
-
-```bash
-uv run python $SKILL_DIR/scripts/generate_whitelist.py
-```
-
-## Report Format
+After agents complete, collect results into a markdown report:
 
 ```markdown
 # Dead Code Audit Report
 
-## Executive Summary
-| Category | Count |
-|----------|-------|
-| Verified dead code | X |
-| Notebook-only code | Y |
-
 ## Verified Dead Code (Safe to Remove)
-| File | Line | Name | Type |
-|------|------|------|------|
+| File | Line | Name | Type | Reason |
 
 ## Notebook-Only Code
-Code used in notebooks but not in source. Consider:
-- Moving to source if generally useful
-- Keeping if notebook-specific
-- Inlining if one-off
+| File | Line | Name | Type |
 
-## Verification Methodology
-...
+## False Positives (Kept)
+| File | Line | Name | Reason |
 ```
 
-## Manual Verification
+## Configuration
 
-When verifying a candidate manually:
+Optional `.dead-code-auditor.json` in repo root:
 
-```bash
-# Check source references
-rg "NAME" src/ --type py -l
-
-# Check notebook references
-rg "NAME" --glob "*.ipynb"
-
-# Check string literals (dynamic dispatch)
-rg '"NAME"|'\''NAME'\''' src/
-
-# Check re-exports
-rg "NAME" --glob "__init__.py"
+```json
+{
+  "source_dirs": ["src", "mypackage"],
+  "exclude_dirs": ["tests", "docs"],
+  "extra_ignored_decorators": ["@my_decorator"],
+  "extra_ignored_names": ["my_special_*"]
+}
 ```
 
-## After Running
+## Whitelist
 
-1. Review the "Verified Dead Code" section
-2. For each item, decide:
-   - Remove (truly dead)
-   - Add to whitelist (false positive)
-   - Keep (has legitimate use not detected)
-3. Test removal: `pytest` or `make test`
-4. Update whitelist.py as needed
+Add false positives to `whitelist.py`:
+
+```python
+unused_func  # Used by Flyte @task
+ClassName  # Plugin base class
+```
+
+## Tips
+
+1. Start with `--limit 30` to test the workflow
+2. Agents should READ the source file to understand context
+3. Check class inheritance - methods may be called on parent
+4. Check framework documentation for magic names
+5. When in doubt, keep it - false negatives beat deleted live code
