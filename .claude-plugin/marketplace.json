@@ -1,0 +1,44 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dead-code-auditor",
+  "description": "Find dead code in Python ML projects using vulture and skylos, with verification against Jupyter notebook usage",
+  "owner": {
+    "name": "vertti",
+    "url": "https://github.com/vertti"
+  },
+  "homepage": "https://github.com/vertti/dead-code-auditor-claude-skill",
+  "repository": "https://github.com/vertti/dead-code-auditor-claude-skill",
+  "license": "MIT",
+  "keywords": [
+    "dead-code",
+    "static-analysis",
+    "vulture",
+    "skylos",
+    "python",
+    "ml",
+    "machine-learning",
+    "jupyter",
+    "notebooks",
+    "code-quality",
+    "refactoring"
+  ],
+  "tags": [
+    "code-quality",
+    "static-analysis",
+    "python",
+    "ml"
+  ],
+  "plugins": [
+    {
+      "name": "dead-code-auditor",
+      "description": "Find and verify dead code in Python ML projects with notebook awareness",
+      "version": "1.0.0",
+      "author": {
+        "name": "vertti",
+        "url": "https://github.com/vertti"
+      },
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
